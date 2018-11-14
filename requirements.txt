@@ -1,11 +1,6 @@
-Cerberus==1.2
-Click==7.0
-Eve==0.8.1
-Events==0.3
-Flask==1.0.2
-itsdangerous==1.1.0
-Jinja2==2.10
-MarkupSafe==1.1.0
+DAWG-Python==0.7.2
+docopt==0.6.2
 pymongo==3.7.2
-simplejson==3.16.0
-Werkzeug==0.14.1
+pymorphy2==0.8
+pymorphy2-dicts==2.4.393442.3710985
+tornado==5.1.1
