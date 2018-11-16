@@ -44,8 +44,10 @@ def get_logger(app_name=__file__, path="./"):
 
     return logger
 
+
 # Хранилища данных сессий
 session_storage = {}
+
 
 # Доступные навыки
 all_suggests = [
@@ -77,12 +79,17 @@ cmd_tokens = {
                 ['что', 'приготовить'], ['что', 'сделать'], ['рецепт'],
             ],
         },
+    'repeat': {
+        'one_of': [
+            ['повтори'], ['еще', 'раз'], ['не', 'понял'], ["помедленнее"],
+        ],
+    },
 }
+
 
 def normalize_list(list):
     """Нормализация всех слов в списке"""
     return [morph.parse(l)[0].normal_form for l in list]
-
 
 
 def get_recipes_count(tokens):
@@ -93,7 +100,6 @@ def get_recipes_count(tokens):
 
 
 def get_recipe_by_name(req):
-    #tokens = normalize_list(tokens)
     tokens = req['request']['nlu']['tokens']
     if 'рецепт' in tokens:
         ind = tokens.index('рецепт')
@@ -103,29 +109,66 @@ def get_recipe_by_name(req):
         ind = tokens.index('готовить')
 
     recipe_tokens = ' '.join(tokens[ind+1:])
-    recipe_list = recipes.find_one({'$text': {'$search': recipe_tokens}})
-    print(recipe_list.title)
+    recipe_list = recipes.find({'$text': {'$search': recipe_tokens}},
+                               {'score': {'$meta': "textScore"}}).sort(
+                               [('score', {'$meta': "textScore"})]).limit(3)
     if not recipe_list:
         resp = 'К сожалению, я не знаю такого рецепта.'
     else:
-        titles = [recipe.title for recipe in recipe_list]
+
+        titles = [recipe.get('title') for recipe in recipe_list]
+
         if len(titles) == 1:
             resp = 'Я нашел для вас рецепт {}.'.format(titles[-1])
         else:
             resp = 'Я нашел для вас следющие рецепты: {}.'.format(', '.join(titles))
+    # resp = str(titles)
     return resp
 
 
-def get_recipe_by_ingredients(tokens):
+def get_recipe_by_ingredients(req):
+    tokens = req['request']['nlu']['tokens']
+    ind = tokens.index('из')
+    if 'без' in tokens:
+        ind_2 = tokens.index('без')
+        include_ingr = tokens[ind+1: ind_2]
+        exclude_ingr = tokens[ind_2+1:]
+        if len(exclude_ingr) == 1:
+            exclude_ingr = ' -' + exclude_ingr[0]
+        else:
+            exclude_ingr = ' -'.join(exclude_ingr)
+        recipe_list = recipes.find({'$text': {'$search': (' '.join(include_ingr) + exclude_ingr)}},
+                                   {'score': {'$meta': "textScore"}}).sort(
+                                   [('score', {'$meta': "textScore"})]).limit(3)
+        logger.debug("Include: {}".format((' '.join(include_ingr) + ' -'.join(exclude_ingr))))
+    else:
+        include_ingr = tokens[ind + 1:]
+        recipe_list = recipes.find({'$text': {'$search': ' '.join(include_ingr)}},
+                                   {'score': {'$meta': "textScore"}}).sort(
+                                   [('score', {'$meta': "textScore"})]).limit(3)
+        logger.debug("Include: {}".format(', '.join(include_ingr)))
+    if not recipe_list:
+        resp = 'К сожалению, я не знаю такого рецепта.'
+    else:
+        titles = [recipe.get('title') for recipe in recipe_list]
 
-    # recipe = recipes.find_one({'title'=''})
-    resp = 'На данный момент я знаю около {}.'  # .format(recipes.count_documents({}))
+    if len(titles) == 0:
+        resp = 'К сожалению, я не знаю такого рецепта.'
+    elif len(titles) == 1:
+        resp = 'Я нашел для вас рецепт {}.'.format(titles[-1])
+    else:
+        resp = 'Я нашел для вас следющие рецепты: {}.'.format(', '.join(titles))
     return resp
 
 
 def get_help(req):
     resp = 'Я могу подобрать рецепт по ингредиентам и продиктовать пошаговые инструкции по приготовлению.' \
-    'Просто спросите "Что приготовить из картошки?" или "Как приготовить карбонару?".'
+    'Просто спросите "Что приготовить из кабачков?" или "Как приготовить карбонару?".'
+    return resp
+
+
+def repeat(req):
+    resp = session_storage[req['session']['user_id']]['last_ans']
     return resp
 
 
@@ -193,7 +236,7 @@ def handle_dialog(req, resp):
             'suggests': all_suggests,
         }
 
-        resp['response']['text'] = 'Здравствуйте! Чем могу помочь?'
+        resp['response']['text'] = 'Здравствуйте! Чем я могу Вам помочь?'
         resp['response']['buttons'] = get_suggests(user_id)
         return
 
@@ -281,6 +324,8 @@ class BenedictHandler(tornado.web.RequestHandler):
         handle_dialog(data, resp)
         logger.info("Response: {}".format(json.dumps(resp, indent=4)))
 
+        session_storage[data['session']['user_id']]['last_ans'] = resp['response']['text']
+
         self.write(self.format_resp(resp))
 
 
@@ -297,6 +342,7 @@ if __name__ == "__main__":
         'find_recipe_by_name': get_recipe_by_name,
         'find_recipe_by_ingredients': get_recipe_by_ingredients,
         'help': get_help,
+        'repeat': repeat,
     }
 
     logger = get_logger()
