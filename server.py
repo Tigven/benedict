@@ -1,52 +1,19 @@
 #!/usr/bin/env python3
 # coding: utf-8
-
 import tornado.ioloop
 import tornado.web
-
-import logging
 import json
 from pymongo import MongoClient
 
-from sdk import AliceRequest, AliceResponse
+from alice import AliceRequest, AliceResponse
 from dialog import DialogHandler
+from logger import get_logger
 
 client = MongoClient('mongodb://127.0.0.1:27017/')
 db = client.benedict
 
 
-def get_logger(app_name=__file__, path="./"):
-    """
-    Конфигурируем логирование и возвращаем объект, через
-    который можно будет писать логи с этими настройками.
-    """
-    lvl = logging.DEBUG
-    filename = "{}{}.log".format(path, app_name)
-    format_str = "%(asctime)s - %(message)s"
-    formatter = logging.Formatter(format_str)
-
-    logger = logging.getLogger(app_name)
-    logger.setLevel(lvl)
-
-    fh = logging.FileHandler(filename)
-    ch = logging.StreamHandler()
-
-    fh.setLevel(lvl)
-    ch.setLevel(lvl)
-
-    ch.setFormatter(formatter)
-    fh.setFormatter(formatter)
-
-    logger.addHandler(ch)
-    logger.addHandler(fh)
-
-    return logger
-
-
 class BenedictHandler(tornado.web.RequestHandler):
-    def set_default_headers(self, *args, **kwargs):
-        pass
-
     def format_resp(self, data, fmt='json'):
         """
         Переводит ответ в нужный формат и выставляет соответстующие
@@ -76,7 +43,7 @@ def make_app():
 
 
 if __name__ == "__main__":
-    logger = get_logger()
+    log = get_logger(app_name='server')
     app = make_app()
     app.listen(8088)
     tornado.ioloop.IOLoop.current().start()
