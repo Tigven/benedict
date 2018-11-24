@@ -32,7 +32,6 @@ class AliceRequest(object):
     def get_number(self):
         for e in self._request_dict['request']['nlu'].get('entities'):
             if e.get('type') == "YANDEX.NUMBER":
-                print('Number is {}'.format(e.get('value')))
                 return e.get('value')
         return None
 
