@@ -23,6 +23,7 @@ class AliceRequest(object):
 
     @property
     def command(self):
+        print(self._request_dict['request']['command'])
         return self._request_dict['request']['command']
 
     @property

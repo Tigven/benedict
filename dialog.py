@@ -30,11 +30,11 @@ def choose_closest(tokens, choices):
     return t[-1][0]
 
 
-def inflect(str, type):
+def inflect(string, inflect_to):
     ans = []
     transform = True
-    for i, word in enumerate(str.split(' ')):
-        w = morph.parse(word)[0].inflect({type})
+    for i, word in enumerate(string.split(' ')):
+        w = morph.parse(word)[0].inflect({inflect_to})
         if w and transform:
             ans.append(w.word)
             if 'NOUN' in w.tag:
@@ -86,7 +86,7 @@ class DialogHandler:
 
     step_tokens = {
         'recipe_step_forward': {
-            'one_of': ['дальше', "вперед", "готово", 'хорошо', 'ок', "да"]
+            'one_of': ['дальше', "вперед", "готово", 'хорошо', 'ок', "да", 'приступаем', 'поехали']
         },
         'recipe_step_backward': {
             'one_of': ['назад', "вернись", ['еще', 'раз']]
@@ -95,8 +95,7 @@ class DialogHandler:
             'one_of': ['остановись', "стоп", "хватит", ['другой', "рецепт"]]
         },
         'time': {
-            'necessary': ['сколько'],
-            'one_of': ['времени', 'готовить'],
+            'one_of': [['сколько', 'времени'], ['сколько', 'готовить'], ['долго', 'готовить']],
         },
         'nutrients': {
             'necessary': ['сколько'],
@@ -107,6 +106,9 @@ class DialogHandler:
                 ['что', 'умеешь'], ['что', 'можешь'], ['что', 'знаешь'],
                 ['что', 'подскажешь'], ['что', 'могу', 'узнать'], 'помощь'
             ],
+        },
+        'repeat': {
+            'one_of': ['повтори', ['еще', 'раз'], ['не', 'понял'], "помедленнее"],
         },
     }
 
@@ -126,10 +128,13 @@ class DialogHandler:
                 ['что', 'подскажешь'], ['что', 'могу', 'узнать'], 'помощь'
             ],
         },
+        'repeat': {
+            'one_of': ['повтори', ['еще', 'раз'], ['не', 'понял'], "помедленнее"],
+        },
     }
 
     recipe_selected_tokens = {
-        'next_recipes_page': {
+        'start_recipe': {
             'one_of': ['дальше', 'еще', 'следующая', 'следующие', 'вперед', 'поехали', 'начинаем',
                        "да", "готово", "ага", "угу", "есть"],
         },
@@ -141,6 +146,9 @@ class DialogHandler:
                 ['что', 'умеешь'], ['что', 'можешь'], ['что', 'знаешь'],
                 ['что', 'подскажешь'], ['что', 'могу', 'узнать'], 'помощь'
             ],
+        },
+        'repeat': {
+            'one_of': ['повтори', ['еще', 'раз'], ['не', 'понял'], "помедленнее"],
         },
     }
 
@@ -171,9 +179,12 @@ class DialogHandler:
             self.process_req()
         else:
             # Обрабатываем запрос от нового пользователя.
-            self.resp.set_text('Здравствуйте! Я могу подобрать рецепт по ингредиентам и продиктовать пошаговые '
-                               'инструкции по приготовлению. Просто спросите "Что приготовить из шампиньонов?" или '
-                               '"Как приготовить карбонару?"')
+            if self.req.command == '':
+                self.resp.set_text('Здравствуйте! Я могу подобрать рецепт по ингредиентам и продиктовать пошаговые '
+                                   'инструкции по приготовлению. Просто спросите "Что приготовить из шампиньонов?" или '
+                                   '"Как приготовить карбонару?"')
+            else:
+                self.process_req()
         self.history.extend([self.req.command, self.resp.get_text()])
         self.db.history.update_one({'user': self.req.user_id},
                                    {'$set': {'history': self.history}})
@@ -198,7 +209,7 @@ class DialogHandler:
                 return self.get_help_rec_list()
         self.session['recipe'] = recipe_title
         self.db.sessions.update_one({'session': self.req.session.get('session_id')},
-                                    {'$set': {'recipe': recipe_title, 'step': 'recipe_selected'}})
+                                    {'$set': {'recipe': recipe_title, 'step': 'recipe_selected', 'page': -1}})
         self.start_recipe()
 
     def process_req(self):
@@ -274,12 +285,13 @@ class DialogHandler:
             self.db.sessions.update_one({'session': self.req.session.get('session_id')},
                                         {'$set': {'step': 'start'}})
         elif len(titles) == 1:
-            resp = 'Я нашел для вас рецепт {}. Приступаем?'.format(titles[-1])
             self.db.sessions.update_one(
                 {'session': self.req.session.get('session_id')},
                 {'$set':
                      {'recipe': titles[-1],
                       'step': 'recipe_selected'}})
+            resp = 'Я нашел для вас рецепт {}. Приступаем?'.format(titles[-1])
+
         elif len(titles) > 3:
             rec = morph.parse('рецепт')[0].make_agree_with_number(len(titles)).word
             resp = 'Я нашел для вас {} {}. Самые популярные это {}. Что нибудь понравилось или ищем дальше?'.format(
@@ -340,14 +352,14 @@ class DialogHandler:
         for ingr in ingredients:
             ingrs_str = '{}{} - {}, '.format(ingrs_str, ingr.get('name'), ingr.get('amount'))
         portions = recipe.get('portions')
-        resp = "Готовим {}. Чтобы приготовить {} Вам понадобится: {} Приступаем?".format(title, portions, ingrs_str)
+        resp = "Готовим {}. Чтобы приготовить {} Вам понадобится: {}. Приступаем?".format(title, portions, ingrs_str)
         self.resp.set_text(resp)
         self.db.sessions.update_one({'session': self.req.session.get('session_id')},
-                                    {'$set': {'step': 'recipe', 'page': 0}})
+                                    {'$set': {'step': 'recipe', 'page': -1}})
 
     def recipe_step_forward(self):
         recipe = self.db.recipes.find_one({'title': self.session.get('recipe')})
-        step_num = self.session.get('page')
+        step_num = self.session.get('page') + 1
         steps = recipe.get('steps')
         if len(steps) == step_num:
             self.resp.set_text('Готово! Приятного аппетита! Чем я еще могу Вам помочь?')
@@ -356,7 +368,7 @@ class DialogHandler:
         else:
             self.resp.set_text(steps[step_num])
             self.db.sessions.update_one({'session': self.req.session.get('session_id')},
-                                        {'$set': {'page': step_num + 1}})
+                                        {'$set': {'page': step_num}})
 
     def recipe_step_backward(self):
         recipe = self.db.recipes.find_one({'title': self.session.get('recipe')})
